@@ -6,6 +6,8 @@ Copy the download_fuller_example_data.py script into the server-0.3.4/scripts di
 
 `./get_n_samples /path/to/ga4gh/server-0.3.4 /path/to/output/dir`
 
+Once this is done, editing config.py to contain `DATA_SOURCE=/path/to/output/dir/50_samples/registry.db` and restarting the server should work.
+
 Requires:
 
 - bcftools
