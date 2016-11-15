@@ -1,11 +1,21 @@
 #!/bin/bash
 
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
-readonly PEDFILE=integrated_call_samples.20130502.ALL.ped
+readonly PED=integrated_call_samples.20130502.ALL.ped
 readonly CHR22=ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 readonly BAMS=alignment.index
 readonly NSAMPLES=50
-readonly OUTPUT_DIR=$( pwd )/${NSAMPLES}_samples
+
+if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "$2" ]] || [[ ! -d "$2" ]] 
+then
+	>&2 echo "Usage: $0 /path/to/server-0.3.4 /output/dir"
+	>&2 echo "   eg, $0 ./server-0.3.4 /srv/ga4gh"
+	>&2 echo "   invocation was: $0 $1 $2"
+	exit 1
+fi
+
+readonly SERVER_DIR=$1
+readonly OUTPUT_DIR=$2/${NSAMPLES}_samples
 
 # use gsort/gzcat on OS X 
 function gnusort {
@@ -27,6 +37,7 @@ function gnuzipcat {
 }
 
 rm -rf ${OUTPUT_DIR}
+mkdir -p ${OUTPUT_DIR}
 
 if [[ ! -f ${CHR22} ]]
 then
@@ -35,9 +46,9 @@ then
 	wget ${remote}
 fi
 
-if [[ ! -f ${PEDFILE} ]]
+if [[ ! -f ${PED} ]]
 then
-	remote=${S3_URL}${PEDFILE}
+	remote=${S3_URL}${PED}
 	echo "Getting ${remote}"
 	wget ${remote}
 fi
@@ -62,10 +73,14 @@ readonly SAMPLES=$( gnuzipcat ${CHR22} \
 			| sed -e 's/,$//' )
 echo $SAMPLES
 
-python ./server-0.3.4/scripts/download_fuller_example_data.py \
+python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
 	--force \
 	--source s3 \
 	--samples ${SAMPLES} \
 	--num-reads 1000 \
 	--num-chromosomes 24 \
 	${OUTPUT_DIR}
+
+rm -f ${BAMS}
+rm -f ${PED}
+rm -f ${CHR22}
