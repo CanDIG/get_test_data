@@ -39,26 +39,20 @@ function gnuzipcat {
 rm -rf ${OUTPUT_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-if [[ ! -f ${CHR22} ]]
-then
-	remote=${S3_URL}${CHR22}
-	echo "Getting ${remote}"
-	wget ${remote}
-fi
+function get_if_absent {
+    local URL=$1
+    local file=$2
+    
+    if [[ ! -f "${file}" ]]
+    then
+    	echo "Getting ${URL}"
+	wget $URL
+    fi
+}
 
-if [[ ! -f ${PED} ]]
-then
-	remote=${S3_URL}${PED}
-	echo "Getting ${remote}"
-	wget ${remote}
-fi
-
-if [[ ! -f ${BAMS} ]]
-then
-	remote=${S3_URL}../../${BAMS}
-	echo "Getting ${remote}"
-	wget ${remote}
-fi
+get_if_absent ${S3_URL}${CHR22} ${CHR22}
+get_if_absent ${S3_URL}${PED} ${PED}
+get_if_absent ${S3_URL}../../${BAMS} ${BAMS}
 
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
 readonly SAMPLES=$( gnuzipcat ${CHR22} \
