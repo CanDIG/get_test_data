@@ -9,6 +9,7 @@ from __future__ import unicode_literals
 import argparse
 import gzip
 import os
+import shutil
 import requests
 import shutil
 import subprocess
@@ -162,11 +163,11 @@ class AbstractFileDownloader(object):
     def log(self, message):
         print(message)
 
-    def runCommand(self, command):
+    def runCommand(self, command, output=None):
         """
         Runs the specified command.
         """
-        subprocess.check_call(command, shell=True)
+        subprocess.check_call(command, shell=True, stdout=output)
 
     def getVcfBaseUrl(self):
         return os.path.join(self.getBaseUrl(), 'release/20130502/')
@@ -204,6 +205,7 @@ class AbstractFileDownloader(object):
             self.dirName, "chr{}.vcf".format(chromosome))
         localCompressedFileName = "{}.gz".format(localFileName)
         localTempFileName = os.path.join(self.dirName, "chr{}.unsampled.vcf.gz".format(chromosome))
+        localIntermediateTempFile = tempfile.NamedTemporaryFile(suffix="vcf", delete=False)
         self.log("Writing '{}'".format(localTempFileName))
 
         response = urllib2.urlopen(url)
@@ -218,8 +220,24 @@ class AbstractFileDownloader(object):
         self.log("Sampling '{}'".format(localTempFileName))
         self.runCommand(
             'bcftools view --force-samples -s {} {} -o {}'.format(
-                args.samples, localTempFileName, localFileName))
+                args.samples, localTempFileName, localIntermediateTempFile.name))
         os.remove(localTempFileName)
+
+        tmpf = open(localTempFileName[:-3], "w")
+        self.runCommand(
+            'zgrep -E "(^#|0\|1|1\|0|1\|1) {} > {}'.format(
+                localIntermediateTempFile.name),
+            output=tmpf)
+        tmpf.close()
+        self.runCommand('gzip {}'.format(localTempFileName[:-3]))
+        os.remove(localIntermediateTempFile.name)
+         
+        if chromosome in ["X", "Y"]:
+            self.runCommand('bcftools annotate -x INFO/OLD_VARIANT {} -o {}'.format(localTempFileName, localFileName))
+        else:
+            shutil.copyfile(localTempFileName, localFileName)
+        os.remove(localTempFileName)
+            
         self.log("Compressing '{}'".format(localFileName))
         self.runCommand('bgzip -f {}'.format(localFileName))
         self.log("Indexing '{}'".format(localCompressedFileName))

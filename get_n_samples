@@ -73,8 +73,5 @@ python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
 	--samples ${SAMPLES} \
 	--num-reads 1000 \
 	--num-chromosomes 23 \
-	${OUTPUT_DIR}
-
-rm -f ${BAMS}
-rm -f ${PED}
-rm -f ${CHR22}
+	${OUTPUT_DIR} \
+	&& rm -f ${BAMS} ${PED} ${CHR22}
