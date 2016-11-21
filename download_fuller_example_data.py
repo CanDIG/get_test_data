@@ -224,22 +224,23 @@ class AbstractFileDownloader(object):
         os.remove(localTempFileName)
 
         tmpf = open(localTempFileName[:-3], "w")
+        self.log("Removing unseen variants")
         self.runCommand(
-            'grep -E "(^#|0\|1|1\|0|1\|1)" {}'.format(
+            'bcftools view -i \'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"\' {}'.format(
                 localIntermediateTempFile.name),
             output=tmpf)
         tmpf.close()
-        self.runCommand('gzip {}'.format(localTempFileName[:-3]))
+        self.runCommand('bgzip -f {}'.format(localTempFileName[:-3]))
         os.remove(localIntermediateTempFile.name)
          
-        if chromosome in ["X", "Y"]:
+        if chromosome == "X":
             self.runCommand('bcftools annotate -x INFO/OLD_VARIANT {} -o {}'.format(localTempFileName, localFileName))
+            self.log("Compressing '{}'".format(localFileName))
+            self.runCommand('bgzip -f {}'.format(localFileName))
         else:
-            shutil.copyfile(localTempFileName, localFileName)
+            self.runCommand('cp {} {}'.format(localTempFileName, localCompressedFileName))
         os.remove(localTempFileName)
             
-        self.log("Compressing '{}'".format(localFileName))
-        self.runCommand('bgzip -f {}'.format(localFileName))
         self.log("Indexing '{}'".format(localCompressedFileName))
         self.runCommand('tabix {}'.format(localCompressedFileName))
         self._updatePositions(localCompressedFileName)
