@@ -225,7 +225,7 @@ class AbstractFileDownloader(object):
 
         tmpf = open(localTempFileName[:-3], "w")
         self.runCommand(
-            'zgrep -E "(^#|0\|1|1\|0|1\|1)" {}'.format(
+            'grep -E "(^#|0\|1|1\|0|1\|1)" {}'.format(
                 localIntermediateTempFile.name),
             output=tmpf)
         tmpf.close()
