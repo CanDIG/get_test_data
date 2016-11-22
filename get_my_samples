@@ -1,0 +1,50 @@
+#!/bin/bash
+
+readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
+readonly PED=integrated_call_samples.20130502.ALL.ped
+readonly BAMS=alignment.index
+
+declare -A SAMPLES=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
+
+if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "$2" ]] || [[ ! -d "$2" ]] || [[ -z "${SAMPLES[$3]}" ]]
+then
+	>&2 echo "Usage: $0 /path/to/server-0.3.4 /output/dir {HSC|UHN|CQ}"
+	>&2 echo "   eg, $0 ./server-0.3.4 /srv/ga4gh UHN"
+	>&2 echo "   invocation was: $0 $1 $2 $3"
+	exit 1
+fi
+
+readonly SERVER_DIR=$1
+readonly SAMPLE_SET=${SAMPLES[$3]}
+readonly OUTPUT_DIR=$2/1000genomes_partition_${SAMPLE_SET}
+
+function get_if_absent {
+    local URL=$1
+    local file=$2
+    
+    if [[ ! -f "${file}" ]]
+    then
+    	echo "Getting ${URL}"
+	wget $URL
+    fi
+}
+
+rm -rf ${OUTPUT_DIR}
+mkdir -p ${OUTPUT_DIR}
+
+get_if_absent ${S3_URL}${PED} ${PED}
+get_if_absent ${S3_URL}../../${BAMS} ${BAMS}
+
+# pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
+readonly SAMPLES=$( awk -v set=${SAMPLE_SET} '$2 == set{print $1}' samples.txt \
+			| tr $'\n' , \
+			| sed -e 's/,$//' )
+
+python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
+	--force \
+	--source s3 \
+	--samples ${SAMPLES} \
+	--num-reads 1000 \
+	--num-chromosomes 23 \
+	${OUTPUT_DIR} \
+&& rm -f ${BAMS} ${PED}
