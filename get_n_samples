@@ -72,6 +72,6 @@ python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
 	--source s3 \
 	--samples ${SAMPLES} \
 	--num-reads 1000 \
-	--num-chromosomes 24 \
+	--num-chromosomes 23 \
 	${OUTPUT_DIR} \
 	&& rm -f ${BAMS} ${PED} ${CHR22}
