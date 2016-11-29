@@ -56,12 +56,12 @@ ga4gh_repo add-referenceset ${REGISTRY} ${REFERENCE} \
 
 # download and install sequence ontology
 echo "Ontology"
-wget -O ${OUTPUT_DIR}/so-xp.obo https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo
+get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo ${OUTPUT_DIR}/so-xp.obo
 ga4gh_repo add-ontology ${REGISTRY} ${OUTPUT_DIR}/so-xp.obo -n so-xp
 
 # install sequence annotations
 echo "Gencode"
-wget -O ${OUTPUT_DIR}/gencode_v24lift37.db https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db
+get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db ${OUTPUT_DIR}/gencode_v24lift37.db
 ga4gh_repo add-featureset ${REGISTRY} 1kgenomes ${OUTPUT_DIR}/gencode_v24lift37.db \
         --referenceSetName NCBI37 --ontologyName so-xp
 
