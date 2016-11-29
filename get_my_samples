@@ -1,8 +1,6 @@
 #!/bin/bash
 
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
-readonly PED=integrated_call_samples.20130502.ALL.ped
-readonly BAMS=alignment.index
 
 declare -A SAMPLES=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
 
@@ -25,26 +23,75 @@ function get_if_absent {
     if [[ ! -f "${file}" ]]
     then
     	echo "Getting ${URL}"
-	wget $URL
+	wget -O ${file} $URL
     fi
 }
 
 rm -rf ${OUTPUT_DIR}
 mkdir -p ${OUTPUT_DIR}
 
-get_if_absent ${S3_URL}${PED} ${PED}
-get_if_absent ${S3_URL}../../${BAMS} ${BAMS}
-
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
 readonly SAMPLES=$( awk -v set=${SAMPLE_SET} '$2 == set{print $1}' samples.txt \
 			| tr $'\n' , \
 			| sed -e 's/,$//' )
 
-python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
-	--force \
-	--source s3 \
-	--samples ${SAMPLES} \
-	--num-reads 1000 \
-	--num-chromosomes 23 \
-	${OUTPUT_DIR} \
-&& rm -f ${BAMS} ${PED}
+# create the registry
+echo "Registry"
+readonly REGISTRY=${OUTPUT_DIR}/registry.db
+if [[ ! -f ${REGISTRY} ]]
+then
+    ga4gh_repo init ${REGISTRY}
+    ga4gh_repo add-dataset ${REGISTRY} 1kgenomes \
+            --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
+fi
+
+# download and install the reference
+echo "Reference"
+readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
+get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz ${REFERENCE} 
+gunzip ${REFERENCE}
+bgzip "${REFERENCE%.*}"
+ga4gh_repo add-referenceset ${REGISTRY} ${REFERENCE} \
+      -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
+        --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
+
+# download and install sequence ontology
+echo "Ontology"
+wget -O ${OUTPUT_DIR}/so-xp.obo https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo
+ga4gh_repo add-ontology ${REGISTRY} ${OUTPUT_DIR}/so-xp.obo -n so-xp
+
+# install sequence annotations
+echo "Gencode"
+wget -O ${OUTPUT_DIR}/gencode_v24lift37.db https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db
+ga4gh_repo add-featureset ${REGISTRY} 1kgenomes ${OUTPUT_DIR}/gencode_v24lift37.db \
+        --referenceSetName NCBI37 --ontologyName so-xp
+
+# VCFs
+echo "VCFs"
+readonly suffix="phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
+declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL.chr3.${suffix} \
+                     ["4"]=ALL.chr4.${suffix} ["5"]=ALL.chr5.${suffix} ["6"]=ALL.chr6.${suffix} \
+                     ["7"]=ALL.chr7.${suffix} ["8"]=ALL.chr8.${suffix} ["9"]=ALL.chr9.${suffix} \
+                     ["10"]=ALL.chr10.${suffix} ["11"]=ALL.chr11.${suffix} ["12"]=ALL.chr12.${suffix} \
+                     ["13"]=ALL.chr13.${suffix} ["14"]=ALL.chr14.${suffix} ["15"]=ALL.chr15.${suffix} \
+                     ["16"]=ALL.chr16.${suffix} ["17"]=ALL.chr17.${suffix} ["18"]=ALL.chr18.${suffix} \
+                     ["19"]=ALL.chr19.${suffix} ["20"]=ALL.chr20.${suffix} ["21"]=ALL.chr21.${suffix} \
+                     ["22"]=ALL.chr22.${suffix} \
+                     ["X"]=ALL.chrX.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz \
+                     ["Y"]=ALL.chrY.phase3_integrated_v1b.20130502.genotypes.vcf.gz )
+
+mkdir -p ${OUTPUT_DIR}/release
+for chrom in $( seq 1 22 ) "X" "Y" 
+do
+    tmpfile=${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz
+    finalfile=${OUTPUT_DIR}/release/chr${chrom}.vcf
+    get_if_absent ${S3_URL}${VCFFILE[$chrom]} $tmpfile
+    bcftools view --force-samples -s ${SAMPLES} ${tmpfile} \
+         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o ${finalfile}
+    bgzip ${finalfile}
+    tabix -p vcf ${finalfile}.gz
+    rm $tmpfile
+done
+
+ga4gh_repo add-variantset ${REGISTRY} 1kgenomes ${OUTPUT_DIR}/release \
+        --name phase3-release --referenceSetName NCBI37
