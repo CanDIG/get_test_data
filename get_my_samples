@@ -12,8 +12,8 @@ then
 	exit 1
 fi
 
+readonly OUTPUT_DIR=$1/1000genomes_partition_${SAMPLE_SET}
 readonly SAMPLE_SET=${SAMPLES[$2]}
-readonly OUTPUT_DIR=$2/1000genomes_partition_${SAMPLE_SET}
 
 function get_if_absent {
     local URL=$1
