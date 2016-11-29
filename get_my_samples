@@ -4,16 +4,15 @@ readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
 
 declare -A SAMPLES=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
 
-if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "$2" ]] || [[ ! -d "$2" ]] || [[ -z "${SAMPLES[$3]}" ]]
+if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "${SAMPLES[$2]}" ]]
 then
-	>&2 echo "Usage: $0 /path/to/server-0.3.4 /output/dir {HSC|UHN|CQ}"
-	>&2 echo "   eg, $0 ./server-0.3.4 /srv/ga4gh UHN"
+	>&2 echo "Usage: $0 /output/dir {HSC|UHN|CQ}"
+	>&2 echo "   eg, $0 /srv/ga4gh UHN"
 	>&2 echo "   invocation was: $0 $1 $2 $3"
 	exit 1
 fi
 
-readonly SERVER_DIR=$1
-readonly SAMPLE_SET=${SAMPLES[$3]}
+readonly SAMPLE_SET=${SAMPLES[$2]}
 readonly OUTPUT_DIR=$2/1000genomes_partition_${SAMPLE_SET}
 
 function get_if_absent {
