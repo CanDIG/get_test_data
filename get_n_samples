@@ -36,8 +36,8 @@ function gnuzipcat {
     fi
 }
 
-rm -rf ${OUTPUT_DIR}
-mkdir -p ${OUTPUT_DIR}
+rm -rf "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}"
 
 function get_if_absent {
     local URL=$1
@@ -46,7 +46,7 @@ function get_if_absent {
     if [[ ! -f "${file}" ]]
     then
     	echo "Getting ${URL}"
-	wget $URL
+	wget "$URL"
     fi
 }
 
@@ -65,13 +65,13 @@ readonly SAMPLES=$( gnuzipcat ${CHR22} \
 			| gnusort \
 			| tr $'\n' , \
 			| sed -e 's/,$//' )
-echo $SAMPLES
+echo "$SAMPLES"
 
-python ${SERVER_DIR}/scripts/download_fuller_example_data.py \
+python "${SERVER_DIR}/scripts/download_fuller_example_data.py" \
 	--force \
 	--source s3 \
-	--samples ${SAMPLES} \
+	--samples "${SAMPLES}" \
 	--num-reads 1000 \
 	--num-chromosomes 23 \
-	${OUTPUT_DIR} \
-	&& rm -f ${BAMS} ${PED} ${CHR22}
+	"${OUTPUT_DIR}" \
+	&& rm -f "${BAMS}" "${PED}" "${CHR22}"

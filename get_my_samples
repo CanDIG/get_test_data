@@ -2,7 +2,7 @@
 
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
 
-declare -A SAMPLES=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
+declare -A SAMPLE_IDXS=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
 
 if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "${SAMPLES[$2]}" ]]
 then
@@ -12,8 +12,8 @@ then
 	exit 1
 fi
 
-readonly OUTPUT_DIR=$1/1000genomes_partition_${SAMPLE_SET}
-readonly SAMPLE_SET=${SAMPLES[$2]}
+readonly SAMPLE_SET="${SAMPLE_IDXS[$2]}"
+readonly OUTPUT_DIR=$1/1000genomes_partition
 
 function get_if_absent {
     local URL=$1
@@ -22,15 +22,15 @@ function get_if_absent {
     if [[ ! -f "${file}" ]]
     then
     	echo "Getting ${URL}"
-	wget -O ${file} $URL
+	wget -O "${file}" "$URL"
     fi
 }
 
-rm -rf ${OUTPUT_DIR}
-mkdir -p ${OUTPUT_DIR}
+rm -rf "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}"
 
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
-readonly SAMPLES=$( awk -v set=${SAMPLE_SET} '$2 == set{print $1}' samples.txt \
+readonly SAMPLES=$( awk -v set="${SAMPLE_SET}" '$2 == set{print $1}' samples.txt \
 			| tr $'\n' , \
 			| sed -e 's/,$//' )
 
@@ -39,30 +39,30 @@ echo "Registry"
 readonly REGISTRY=${OUTPUT_DIR}/registry.db
 if [[ ! -f ${REGISTRY} ]]
 then
-    ga4gh_repo init ${REGISTRY}
-    ga4gh_repo add-dataset ${REGISTRY} 1kgenomes \
+    ga4gh_repo init "${REGISTRY}"
+    ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
             --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
 fi
 
 # download and install the reference
 echo "Reference"
 readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
-get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz ${REFERENCE} 
-gunzip ${REFERENCE}
+get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE} "
+gunzip "${REFERENCE}"
 bgzip "${REFERENCE%.*}"
-ga4gh_repo add-referenceset ${REGISTRY} ${REFERENCE} \
+ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}"\
       -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
         --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
 
 # download and install sequence ontology
 echo "Ontology"
-get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo ${OUTPUT_DIR}/so-xp.obo
-ga4gh_repo add-ontology ${REGISTRY} ${OUTPUT_DIR}/so-xp.obo -n so-xp
+get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo "${OUTPUT_DIR}/so-xp.obo"
+ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
 
 # install sequence annotations
 echo "Gencode"
-get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db ${OUTPUT_DIR}/gencode_v24lift37.db
-ga4gh_repo add-featureset ${REGISTRY} 1kgenomes ${OUTPUT_DIR}/gencode_v24lift37.db \
+get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "${OUTPUT_DIR}/gencode_v24lift37.db"
+ga4gh_repo add-featureset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/gencode_v24lift37.db" \
         --referenceSetName NCBI37 --ontologyName so-xp
 
 # VCFs
@@ -79,18 +79,18 @@ declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL
                      ["X"]=ALL.chrX.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz \
                      ["Y"]=ALL.chrY.phase3_integrated_v1b.20130502.genotypes.vcf.gz )
 
-mkdir -p ${OUTPUT_DIR}/release
+mkdir -p "${OUTPUT_DIR}/release"
 for chrom in $( seq 1 22 ) "X" "Y" 
 do
     tmpfile=${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz
     finalfile=${OUTPUT_DIR}/release/chr${chrom}.vcf
-    get_if_absent ${S3_URL}${VCFFILE[$chrom]} $tmpfile
-    bcftools view --force-samples -s ${SAMPLES} ${tmpfile} \
-         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o ${finalfile}
-    bgzip ${finalfile}
-    tabix -p vcf ${finalfile}.gz
-    rm $tmpfile
+    get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
+    bcftools view --force-samples -s "${SAMPLES}" "${tmpfile}" \
+         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
+    bgzip "${finalfile}"
+    tabix -p vcf "${finalfile}.gz"
+    rm "$tmpfile"
 done
 
-ga4gh_repo add-variantset ${REGISTRY} 1kgenomes ${OUTPUT_DIR}/release \
+ga4gh_repo add-variantset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/release" \
         --name phase3-release --referenceSetName NCBI37
