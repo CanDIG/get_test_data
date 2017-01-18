@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
+readonly PED=integrated_call_samples.20130502.ALL.ped
+readonly CHR22=ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
+
+readonly NSAMPLES=50
+readonly NSITES=3
+readonly ALLNSAMPLES=$((NSAMPLES*NSITES))
+readonly NCHROM=3
+
+if [[ -z "$1" ]] || [[ ! -d "$1" ]] 
+then
+	>&2 echo "Usage: $0 /output/dir"
+	>&2 echo "   eg, $0 /srv/ga4gh"
+	>&2 echo "   invocation was: $0 $1 $2 $3"
+	exit 1
+fi
+
+readonly OUTPUT_DIR="$1"
+
+function get_if_absent {
+    local URL=$1
+    local file=$2
+    
+    if [[ ! -f "${file}" ]]
+    then
+    	echo "Getting ${URL}"
+	wget -O "${file}" "$URL"
+    fi
+}
+
+# use gsort/gzcat on OS X 
+function gnusort {
+    if hash gsort 2>/dev/null
+    then
+        gsort "$@"
+    else
+        sort "$@"
+    fi
+}
+
+function gnuzipcat {
+    if hash gzcat 2>/dev/null
+    then
+        gzcat "$@"
+    else
+        zcat "$@"
+    fi
+}
+
+rm -rf "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}"
+
+get_if_absent "${S3_URL}${CHR22}" "${CHR22}"
+get_if_absent "${S3_URL}${PED}" "${PED}"
+get_if_absent "${S3_URL}../../${BAMS}" "${BAMS}"
+
+# pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
+readonly ALLRAWSAMPLES=$( gnuzipcat "${CHR22}" \
+			| head -n 1000 \
+			| grep CHROM \
+			| cut -f10- -d $'\t' \
+			| tr $'\t' $'\n' \
+			| gnusort -R \
+            | head -n "${ALLNSAMPLES}" )
+
+echo "$ALLRAWSAMPLES"
+
+ALLSAMPLES=""
+SAMPLES=()
+for site  in $( seq 0 $((NSITES-1)) )
+do
+    SAMPLES[$site]=$( echo "${ALLRAWSAMPLES}" \
+                         | awk -v site="$site" -v N="$NSAMPLES" 'NR>=site*N && NR <(site+1)*N' \
+                         | gnusort \
+                         | tr $'\n' , )
+    echo "$site"
+    echo "${SAMPLES[$site]}"
+    ALLSAMPLES="${ALLSAMPLES}${SAMPLES[$site]}"
+done
+
+# VCFs
+echo "VCFs"
+readonly suffix="phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
+declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL.chr3.${suffix} \
+                     ["4"]=ALL.chr4.${suffix} ["5"]=ALL.chr5.${suffix} ["6"]=ALL.chr6.${suffix} \
+                     ["7"]=ALL.chr7.${suffix} ["8"]=ALL.chr8.${suffix} ["9"]=ALL.chr9.${suffix} \
+                     ["10"]=ALL.chr10.${suffix} ["11"]=ALL.chr11.${suffix} ["12"]=ALL.chr12.${suffix} \
+                     ["13"]=ALL.chr13.${suffix} ["14"]=ALL.chr14.${suffix} ["15"]=ALL.chr15.${suffix} \
+                     ["16"]=ALL.chr16.${suffix} ["17"]=ALL.chr17.${suffix} ["18"]=ALL.chr18.${suffix} \
+                     ["19"]=ALL.chr19.${suffix} ["20"]=ALL.chr20.${suffix} ["21"]=ALL.chr21.${suffix} \
+                     ["22"]=ALL.chr22.${suffix} \
+                     ["X"]=ALL.chrX.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz \
+                     ["Y"]=ALL.chrY.phase3_integrated_v1b.20130502.genotypes.vcf.gz )
+
+
+if [[ $NCHROM -lt 23 ]] 
+then
+    chromlist=$( seq 1 $NCHROM )
+elif [[ $NCHROM -eq 23 ]]
+then
+    chromlist="$( seq 1 22 ) X"
+else
+    chromlist="$( seq 1 22 ) X Y"
+fi
+
+mkdir -p "${OUTPUT_DIR}/all_samples"
+for chrom in $chromlist
+do
+    tmpfile="${OUTPUT_DIR}/all_samples/chr${chrom}.unsampled.vcf.gz"
+    finalfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
+    get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
+    bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
+         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
+done
+
+exit
+
+# create the registry
+echo "Registry"
+readonly REGISTRY=${OUTPUT_DIR}/registry.db
+if [[ ! -f ${REGISTRY} ]]
+then
+    ga4gh_repo init "${REGISTRY}"
+    ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
+            --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
+fi
+
+# download and install the reference
+echo "Reference"
+readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
+get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
+gunzip "${REFERENCE}"
+bgzip "${REFERENCE%.*}"
+ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}" \
+      -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
+        --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
+
+# download and install sequence ontology
+echo "Ontology"
+get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo "${OUTPUT_DIR}/so-xp.obo"
+ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
+
+# install sequence annotations
+echo "Gencode"
+get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "${OUTPUT_DIR}/gencode_v24lift37.db"
+ga4gh_repo add-featureset "${REGISTRY}" "1kgenomes" "${OUTPUT_DIR}/gencode_v24lift37.db" \
+        --referenceSetName NCBI37 --ontologyName so-xp
+
+ga4gh_repo add-variantset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/release" \
+        --name phase3-release --referenceSetName NCBI37
