@@ -3,6 +3,7 @@
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
 readonly PED=integrated_call_samples.20130502.ALL.ped
 readonly CHR22=ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
+readonly REFERENCE=hs37d5.fa.gz
 
 readonly NSAMPLES=50
 readonly NSITES=3
@@ -49,12 +50,24 @@ function gnuzipcat {
     fi
 }
 
-rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
+
+##
+## Download metada
+##
 
 get_if_absent "${S3_URL}${CHR22}" "${CHR22}"
 get_if_absent "${S3_URL}${PED}" "${PED}"
 get_if_absent "${S3_URL}../../${BAMS}" "${BAMS}"
+get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
+gunzip "${REFERENCE}"
+bgzip "${REFERENCE%.*}"
+get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "so-xp.obo"
+get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "gencode_v24lift37.db"
+
+##
+## Choose our subset of samples
+##
 
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
 readonly ALLRAWSAMPLES=$( gnuzipcat "${CHR22}" \
@@ -71,14 +84,20 @@ ALLSAMPLES=""
 SAMPLES=()
 for site  in $( seq 0 $((NSITES-1)) )
 do
-    SAMPLES[$site]=$( echo "${ALLRAWSAMPLES}" \
+    tmp=$( echo "${ALLRAWSAMPLES}" \
                          | awk -v site="$site" -v N="$NSAMPLES" 'NR>=site*N && NR <(site+1)*N' \
                          | gnusort \
                          | tr $'\n' , )
+    ALLSAMPLES="${ALLSAMPLES}${tmp}"
+    SAMPLES[$site]=${tmp%?}   # remove last character
     echo "$site"
     echo "${SAMPLES[$site]}"
-    ALLSAMPLES="${ALLSAMPLES}${SAMPLES[$site]}"
 done
+ALLSAMPLES="${ALLSAMPLES%?}"
+
+###
+### Download VCFs and strip out the other samples
+###
 
 # VCFs
 echo "VCFs"
@@ -115,38 +134,57 @@ do
          | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
 done
 
-exit
+##
+## Now create each site's data set and registry
+##
 
-# create the registry
-echo "Registry"
-readonly REGISTRY=${OUTPUT_DIR}/registry.db
-if [[ ! -f ${REGISTRY} ]]
-then
-    ga4gh_repo init "${REGISTRY}"
-    ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
-            --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
-fi
+for site in $( seq 1 $NSITES )
+do
+    sitedir="${OUTPUT_DIR}/sites/${site}"
 
-# download and install the reference
-echo "Reference"
-readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
-get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
-gunzip "${REFERENCE}"
-bgzip "${REFERENCE%.*}"
-ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}" \
-      -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
-        --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
+    # create the registry
+    echo "Registry"
+    readonly REGISTRY="${sitedir}/registry.db"
+    if [[ ! -f ${REGISTRY} ]]
+    then
+        ga4gh_repo init "${REGISTRY}"
+        ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
+                --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
+    fi
 
-# download and install sequence ontology
-echo "Ontology"
-get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo "${OUTPUT_DIR}/so-xp.obo"
-ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
+    # Add reference
+    echo "Reference"
+    cp "${REFERENCE}" "${sitedir}/${REFERENCE}"
+    ga4gh_repo add-referenceset "${REGISTRY}" "${sitedir}/${REFERENCE}" \
+          -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
+            --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
 
-# install sequence annotations
-echo "Gencode"
-get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "${OUTPUT_DIR}/gencode_v24lift37.db"
-ga4gh_repo add-featureset "${REGISTRY}" "1kgenomes" "${OUTPUT_DIR}/gencode_v24lift37.db" \
-        --referenceSetName NCBI37 --ontologyName so-xp
+    # Add sequence ontology
+    echo "Ontology"
+    cp so-xp.obo "${sitedir}/so-xp.obo"
+    ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
 
-ga4gh_repo add-variantset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/release" \
-        --name phase3-release --referenceSetName NCBI37
+    # Add sequence annotations
+    echo "Gencode"
+    cp "gencode_v24lift37.db" "${sitedir}/gencode_v24lift37.db"
+    ga4gh_repo add-featureset "${REGISTRY}" "1kgenomes" "${sitedir}/gencode_v24lift37.db" \
+            --referenceSetName NCBI37 --ontologyName so-xp
+
+    ## 
+    ## final subset (and tabix) of the VCFs
+    ##
+    mkdir -p "${sitedir}/vcfs"
+    for chrom in $chromlist
+    do
+        tmpfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
+        finalfile="${sitedir}/vcfs/chr${chrom}.vcf"
+        bcftools view --force-samples -s "${SAMPLES[$site]}" "${tmpfile}" \
+             | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
+        bgzip "${finalfile}"
+        tabix -p vcf "${finalfile}.gz"
+    done
+
+
+    ga4gh_repo add-variantset "${REGISTRY}" 1kgenomes "${sitedir}/vcfs" \
+            --name phase3-release --referenceSetName NCBI37
+done
