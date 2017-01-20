@@ -2,11 +2,11 @@
 
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
 
-declare -A SAMPLE_IDXS=( ["HSC"]=1 ["UHN"]=2 ["CQ"]=3 )
+declare -A SAMPLE_IDXS=( ["HSC"]=1 ["UHN"]=2 ["BCGSC"]=3 )
 
 if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "${SAMPLES[$2]}" ]]
 then
-	>&2 echo "Usage: $0 /output/dir {HSC|UHN|CQ}"
+	>&2 echo "Usage: $0 /output/dir {HSC|UHN|BCGSC}"
 	>&2 echo "   eg, $0 /srv/ga4gh UHN"
 	>&2 echo "   invocation was: $0 $1 $2 $3"
 	exit 1
