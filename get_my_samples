@@ -47,7 +47,7 @@ fi
 # download and install the reference
 echo "Reference"
 readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
-get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE} "
+get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
 gunzip "${REFERENCE}"
 bgzip "${REFERENCE%.*}"
 ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}"\
