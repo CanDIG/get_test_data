@@ -56,7 +56,7 @@ ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}"\
 
 # download and install sequence ontology
 echo "Ontology"
-get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp.obo "${OUTPUT_DIR}/so-xp.obo"
+get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "${OUTPUT_DIR}/so-xp.obo"
 ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
 
 # install sequence annotations
