@@ -82,8 +82,8 @@ declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL
 mkdir -p "${OUTPUT_DIR}/release"
 for chrom in $( seq 1 22 ) "X" "Y" 
 do
-    tmpfile=${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz
-    finalfile=${OUTPUT_DIR}/release/chr${chrom}.vcf
+    tmpfile="${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz"
+    finalfile="${OUTPUT_DIR}/release/chr${chrom}.vcf"
     get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
     bcftools view --force-samples -s "${SAMPLES}" "${tmpfile}" \
          | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
