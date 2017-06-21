@@ -29,20 +29,9 @@ function get_if_absent {
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
 
-# pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
 readonly SAMPLES=$( awk -v set="${SAMPLE_SET}" '$2 == set{print $1}' samples.txt \
 			| tr $'\n' , \
 			| sed -e 's/,$//' )
-
-# create the registry
-echo "Registry"
-readonly REGISTRY=${OUTPUT_DIR}/registry.db
-if [[ ! -f ${REGISTRY} ]]
-then
-    ga4gh_repo init "${REGISTRY}"
-    ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
-            --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
-fi
 
 # download and install the reference
 echo "Reference"
@@ -50,20 +39,14 @@ readonly REFERENCE=${OUTPUT_DIR}/hs37d5.fa.gz
 get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
 gunzip "${REFERENCE}"
 bgzip "${REFERENCE%.*}"
-ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}"\
-      -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
-        --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
 
 # download and install sequence ontology
 echo "Ontology"
 get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "${OUTPUT_DIR}/so-xp.obo"
-ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
 
 # install sequence annotations
 echo "Gencode"
 get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "${OUTPUT_DIR}/gencode_v24lift37.db"
-ga4gh_repo add-featureset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/gencode_v24lift37.db" \
-        --referenceSetName NCBI37 --ontologyName so-xp
 
 # VCFs
 echo "VCFs"
@@ -83,14 +66,38 @@ mkdir -p "${OUTPUT_DIR}/release"
 for chrom in $( seq 1 22 ) "X" "Y" 
 do
     tmpfile="${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz"
-    finalfile="${OUTPUT_DIR}/release/chr${chrom}.vcf"
     get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
+done
+
+for chrom in $( seq 1 22 ) "X" "Y" 
+do
+    tmpfile="${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz"
+    finalfile="${OUTPUT_DIR}/release/chr${chrom}.vcf"
     bcftools view --force-samples -s "${SAMPLES}" "${tmpfile}" \
          | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
     bgzip "${finalfile}"
     tabix -p vcf "${finalfile}.gz"
     rm "$tmpfile"
 done
+
+# create the registry using the downloaded data
+echo "Registry"
+readonly REGISTRY="${OUTPUT_DIR}"/registry.db
+if [[ ! -f ${REGISTRY} ]]
+then
+    ga4gh_repo init "${REGISTRY}"
+    ga4gh_repo add-dataset "${REGISTRY}" 1kgenomes \
+            --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
+fi
+
+ga4gh_repo add-referenceset "${REGISTRY}" "${REFERENCE}"\
+      -d "NCBI37 assembly of the human genome" --ncbiTaxonId 9606 --name NCBI37 \
+        --sourceUri "${S3_URL}/../../technical/reference/human_g1k_v37.fasta.gz"
+
+ga4gh_repo add-ontology "${REGISTRY}" "${OUTPUT_DIR}/so-xp.obo" -n so-xp
+
+ga4gh_repo add-featureset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/gencode_v24lift37.db" \
+        --referenceSetName NCBI37 --ontologyName so-xp
 
 ga4gh_repo add-variantset "${REGISTRY}" 1kgenomes "${OUTPUT_DIR}/release" \
         --name phase3-release --referenceSetName NCBI37
