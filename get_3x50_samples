@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
+readonly CHROM=11   # Chromosome 20 or 11
 readonly S3_URL=http://1000genomes.s3.amazonaws.com/release/20130502/
 readonly PED=integrated_call_samples.20130502.ALL.ped
-readonly CHR22=ALL.chr22.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
+readonly ALLVCF=ALL.chr${CHROM}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz
 readonly REFERENCE=hs37d5.fa.gz
 
 readonly NSAMPLES=50
 readonly NSITES=3
 readonly ALLNSAMPLES=$((NSAMPLES*NSITES))
-readonly NCHROM=3
 
 if [[ -z "$1" ]] || [[ ! -d "$1" ]] 
 then
@@ -56,7 +56,7 @@ mkdir -p "${OUTPUT_DIR}"
 ## Download metada
 ##
 
-get_if_absent "${S3_URL}${CHR22}" "${CHR22}"
+get_if_absent "${S3_URL}${ALLVCF}" "${ALLVCF}"
 get_if_absent "${S3_URL}${PED}" "${PED}"
 get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "so-xp.obo"
 get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "gencode_v24lift37.db"
@@ -72,15 +72,13 @@ fi
 ##
 
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
-readonly ALLRAWSAMPLES=$( gnuzipcat "${CHR22}" \
+readonly ALLRAWSAMPLES=$( gnuzipcat "${ALLVCF}" \
 			| head -n 1000 \
 			| grep CHROM \
 			| cut -f10- -d $'\t' \
 			| tr $'\t' $'\n' \
 			| gnusort -R \
             | head -n "${ALLNSAMPLES}" )
-
-echo "$ALLRAWSAMPLES"
 
 ALLSAMPLES=""
 SAMPLES=()
@@ -99,46 +97,18 @@ done
 ALLSAMPLES="${ALLSAMPLES%?}"
 
 ###
-### Download VCFs and strip out the other samples
+### Strip out the other samples, and variants not seen in our samples
 ###
 
-# VCFs
-echo "VCFs"
-readonly suffix="phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
-declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL.chr3.${suffix} \
-                     ["4"]=ALL.chr4.${suffix} ["5"]=ALL.chr5.${suffix} ["6"]=ALL.chr6.${suffix} \
-                     ["7"]=ALL.chr7.${suffix} ["8"]=ALL.chr8.${suffix} ["9"]=ALL.chr9.${suffix} \
-                     ["10"]=ALL.chr10.${suffix} ["11"]=ALL.chr11.${suffix} ["12"]=ALL.chr12.${suffix} \
-                     ["13"]=ALL.chr13.${suffix} ["14"]=ALL.chr14.${suffix} ["15"]=ALL.chr15.${suffix} \
-                     ["16"]=ALL.chr16.${suffix} ["17"]=ALL.chr17.${suffix} ["18"]=ALL.chr18.${suffix} \
-                     ["19"]=ALL.chr19.${suffix} ["20"]=ALL.chr20.${suffix} ["21"]=ALL.chr21.${suffix} \
-                     ["22"]=ALL.chr22.${suffix} \
-                     ["X"]=ALL.chrX.phase3_shapeit2_mvncall_integrated_v1b.20130502.genotypes.vcf.gz \
-                     ["Y"]=ALL.chrY.phase3_integrated_v1b.20130502.genotypes.vcf.gz )
-
-
-if [[ $NCHROM -lt 23 ]] 
-then
-    chromlist=$( seq 1 $NCHROM )
-elif [[ $NCHROM -eq 23 ]]
-then
-    chromlist="$( seq 1 22 ) X"
-else
-    chromlist="$( seq 1 22 ) X Y"
-fi
-
 mkdir -p "${OUTPUT_DIR}/all_samples"
-for chrom in $chromlist
-do
-    tmpfile="${OUTPUT_DIR}/all_samples/chr${chrom}.unsampled.vcf.gz"
-    finalfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
-    get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
-    bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
-         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
-done
+tmpfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.unsampled.vcf.gz"
+ln -s "$ALLVCF" "$tmpfile"
+finalfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
+bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
+     | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
 
 ##
-## Now create each site's data set and registry
+## Now create each site's data set 
 ##
 
 for site in $( seq 1 $NSITES )
@@ -149,6 +119,27 @@ do
     cp "${REFERENCE}" "${sitedir}/${REFERENCE}"
     cp so-xp.obo "${sitedir}/so-xp.obo"
     cp "gencode_v24lift37.db" "${sitedir}/gencode_v24lift37.db"
+
+    ## 
+    ## final subset (and tabix) of the VCFs
+    ##
+    mkdir -p "${sitedir}/vcfs"
+    tmpfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.vcf"
+    finalfile="${sitedir}/vcfs/chr${CHROM}.vcf"
+    bcftools view --force-samples -s "${SAMPLES[$site]}" "${tmpfile}" \
+         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
+    bgzip -f "${finalfile}"
+    tabix -p vcf "${finalfile}.gz"
+
+    ##
+    ## Get the relevant BAMs
+    ##
+    mkdir -p "${sitedir}/vcfs"
+    samples=$( echo "${SAMPLES[$site]}" | tr ',' ' ' )
+    for sample in $samples
+    do
+        :
+    done
 
     # create the registry
     echo "Registry"
@@ -174,21 +165,6 @@ do
     echo "Gencode"
     ga4gh_repo add-featureset "${registry}" "1kgenomes" "${sitedir}/gencode_v24lift37.db" \
             --referenceSetName NCBI37 --ontologyName so-xp
-
-    ## 
-    ## final subset (and tabix) of the VCFs
-    ##
-    mkdir -p "${sitedir}/vcfs"
-    for chrom in $chromlist
-    do
-        tmpfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
-        finalfile="${sitedir}/vcfs/chr${chrom}.vcf"
-        bcftools view --force-samples -s "${SAMPLES[$site]}" "${tmpfile}" \
-             | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
-        bgzip -f "${finalfile}"
-        tabix -p vcf "${finalfile}.gz"
-    done
-
 
     ga4gh_repo add-variantset "${registry}" 1kgenomes "${sitedir}/vcfs" \
             --name phase3-release --referenceSetName NCBI37
