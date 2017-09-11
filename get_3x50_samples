@@ -20,14 +20,14 @@ fi
 
 readonly OUTPUT_DIR="$1"
 
-function get_if_absent {
+function wget_if_absent {
     local URL=$1
     local file=$2
     
     if [[ ! -f "${file}" ]]
     then
-    	echo "Getting ${URL}"
-	wget -O "${file}" "$URL"
+        echo "Wgetting ${URL}"
+        wget -O "${file}" "$URL"
     fi
 }
 
@@ -50,19 +50,24 @@ function gnuzipcat {
     fi
 }
 
+##
+## Make sure we have the AWS cli installed 
+##
+have_aws_cli
+
 mkdir -p "${OUTPUT_DIR}"
 
 ##
-## Download metada
+## Download metadata
 ##
 
-get_if_absent "${S3_URL}${ALLVCF}" "${ALLVCF}"
-get_if_absent "${S3_URL}${PED}" "${PED}"
-get_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "so-xp.obo"
-get_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "gencode_v24lift37.db"
+wget_if_absent "${S3_URL}${ALLVCF}" "${ALLVCF}"
+wget_if_absent "${S3_URL}${PED}" "${PED}"
+wget_if_absent https://raw.githubusercontent.com/The-Sequence-Ontology/SO-Ontologies/master/so-xp-dec.obo "so-xp.obo"
+wget_if_absent https://ga4ghstore.blob.core.windows.net/testing/gencode_v24lift37.db "gencode_v24lift37.db"
 if [[ ! -f "${REFERENCE}" ]]
 then
-    get_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
+    wget_if_absent http://1000genomes.s3.amazonaws.com/technical/reference/human_g1k_v37.fasta.gz "${REFERENCE}"
     gunzip "${REFERENCE}"
     bgzip -f "${REFERENCE%.*}"
 fi
@@ -103,7 +108,7 @@ ALLSAMPLES="${ALLSAMPLES%?}"
 mkdir -p "${OUTPUT_DIR}/all_samples"
 tmpfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.unsampled.vcf.gz"
 ln -s "$ALLVCF" "$tmpfile"
-finalfile="${OUTPUT_DIR}/all_samples/chr${chrom}.vcf"
+finalfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.vcf"
 bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
      | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
 
@@ -134,11 +139,13 @@ do
     ##
     ## Get the relevant BAMs
     ##
-    mkdir -p "${sitedir}/vcfs"
+    mkdir -p "${sitedir}/bams"
     samples=$( echo "${SAMPLES[$site]}" | tr ',' ' ' )
     for sample in $samples
     do
-        :
+        bam="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/${sample}/alignment/${sample}.chrom${CHROM}.ILLUMINA.bwa.GBR.low_coverage.20130415.bam"
+        wget_if_absent "${bam}" "${sitedir}/bams/${sample}.chr${CHROM}.bam"
+        wget_if_absent "${bam}.bai" "${sitedir}/bams/${sample}.chr${CHROM}.bam.bai"
     done
 
     # create the registry
@@ -148,7 +155,7 @@ do
     then
         ga4gh_repo init "${registry}"
         ga4gh_repo add-dataset "${registry}" 1kgenomes \
-                --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
+           --description "Variants from the 1000 Genomes project and GENCODE genes annotations"
     fi
 
     # Add reference
@@ -168,4 +175,10 @@ do
 
     ga4gh_repo add-variantset "${registry}" 1kgenomes "${sitedir}/vcfs" \
             --name phase3-release --referenceSetName NCBI37
+
+    for bamfile in "${sitedir}/bams/"*bam
+    do
+        ga4gh_repo add-readgroupset "${registry}" 1kgenomes "${bamfile}" \
+                --name phase3-release --referenceSetName NCBI37 -I "${bamfile}.bai"
+    done
 done
