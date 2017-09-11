@@ -23,11 +23,18 @@ readonly OUTPUT_DIR="$1"
 function wget_if_absent {
     local URL=$1
     local file=$2
+    local pattern=$3
     
     if [[ ! -f "${file}" ]]
     then
-        echo "Wgetting ${URL}"
-        wget -O "${file}" "$URL"
+        if [[ -z "${pattern}" ]]
+        then
+            echo "Wgetting ${URL}"
+            wget -O "${file}" "$URL"
+        else
+            echo "Wgetting ${URL} with pattern ${pattern}"
+            wget -r --no-parent -A "${pattern}" -O "${file}" "$URL"
+        fi
     fi
 }
 
@@ -107,7 +114,7 @@ ALLSAMPLES="${ALLSAMPLES%?}"
 
 mkdir -p "${OUTPUT_DIR}/all_samples"
 tmpfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.unsampled.vcf.gz"
-ln -s "$ALLVCF" "$tmpfile"
+cp "$ALLVCF" "$tmpfile"
 finalfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.vcf"
 bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
      | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
@@ -131,10 +138,13 @@ do
     mkdir -p "${sitedir}/vcfs"
     tmpfile="${OUTPUT_DIR}/all_samples/chr${CHROM}.vcf"
     finalfile="${sitedir}/vcfs/chr${CHROM}.vcf"
-    bcftools view --force-samples -s "${SAMPLES[$site]}" "${tmpfile}" \
-         | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
-    bgzip -f "${finalfile}"
-    tabix -p vcf "${finalfile}.gz"
+    if [[ ! -f "${finalfile}.gz" ]]
+    then
+        bcftools view --force-samples -s "${SAMPLES[$site]}" "${tmpfile}" \
+             | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
+        bgzip -f "${finalfile}"
+        tabix -p vcf "${finalfile}.gz"
+    fi
 
     ##
     ## Get the relevant BAMs
@@ -143,9 +153,11 @@ do
     samples=$( echo "${SAMPLES[$site]}" | tr ',' ' ' )
     for sample in $samples
     do
-        bam="ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/${sample}/alignment/${sample}.chrom${CHROM}.ILLUMINA.bwa.GBR.low_coverage.20130415.bam"
-        wget_if_absent "${bam}" "${sitedir}/bams/${sample}.chr${CHROM}.bam"
-        wget_if_absent "${bam}.bai" "${sitedir}/bams/${sample}.chr${CHROM}.bam.bai"
+        bamdir="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/${sample}/alignment/"
+        bampattern="${sample}.chrom${CHROM}.ILLUMINA.bwa.*.bam"
+        baipattern="${sample}.chrom${CHROM}.ILLUMINA.bwa.*.bam.bai"
+        wget_if_absent "${bamdir}" "${sitedir}/bams/${sample}.chr${CHROM}.bam" "${bampattern}"
+        wget_if_absent "${bamdir}" "${sitedir}/bams/${sample}.chr${CHROM}.bam.bai" "${baipattern}"
     done
 
     # create the registry
