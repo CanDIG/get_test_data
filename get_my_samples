@@ -6,10 +6,10 @@ declare -A SAMPLE_IDXS=( ["HSC"]=1 ["UHN"]=2 ["BCGSC"]=3 )
 
 if [[ -z "$1" ]] || [[ ! -d "$1" ]] || [[ -z "${SAMPLE_IDXS[$2]}" ]]
 then
-	>&2 echo "Usage: $0 /output/dir {HSC|UHN|BCGSC}"
-	>&2 echo "   eg, $0 /srv/ga4gh UHN"
-	>&2 echo "   invocation was: $0 $1 $2 $3"
-	exit 1
+  >&2 echo "Usage: $0 /output/dir {HSC|UHN|BCGSC}"
+  >&2 echo "   eg, $0 /srv/ga4gh UHN"
+  >&2 echo "   invocation was: $0 $1 $2 $3"
+  exit 1
 fi
 
 readonly SAMPLE_SET="${SAMPLE_IDXS[$2]}"
@@ -18,11 +18,11 @@ readonly OUTPUT_DIR=$1/1000genomes_partition
 function get_if_absent {
     local URL=$1
     local file=$2
-    
+
     if [[ ! -f "${file}" ]]
     then
-    	echo "Getting ${URL}"
-	wget -O "${file}" "$URL"
+      echo "Getting ${URL}"
+  wget -O "${file}" "$URL"
     fi
 }
 
@@ -30,8 +30,8 @@ rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
 
 readonly SAMPLES=$( awk -v set="${SAMPLE_SET}" '$2 == set{print $1}' samples.txt \
-			| tr $'\n' , \
-			| sed -e 's/,$//' )
+      | tr $'\n' , \
+      | sed -e 's/,$//' )
 
 # download and install the reference
 echo "Reference"
@@ -63,13 +63,13 @@ declare -A VCFFILE=( ["1"]=ALL.chr1.${suffix} ["2"]=ALL.chr2.${suffix} ["3"]=ALL
                      ["Y"]=ALL.chrY.phase3_integrated_v1b.20130502.genotypes.vcf.gz )
 
 mkdir -p "${OUTPUT_DIR}/release"
-for chrom in $( seq 1 22 ) "X" "Y" 
+for chrom in $( seq 1 22 ) "X" "Y"
 do
     tmpfile="${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz"
     get_if_absent "${S3_URL}${VCFFILE[$chrom]}" "$tmpfile"
 done
 
-for chrom in $( seq 1 22 ) "X" "Y" 
+for chrom in $( seq 1 22 ) "X" "Y"
 do
     tmpfile="${OUTPUT_DIR}/release/chr${chrom}.unsampled.vcf.gz"
     finalfile="${OUTPUT_DIR}/release/chr${chrom}.vcf"

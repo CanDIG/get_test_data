@@ -10,12 +10,12 @@ readonly NSAMPLES=50
 readonly NSITES=3
 readonly ALLNSAMPLES=$((NSAMPLES*NSITES))
 
-if [[ -z "$1" ]] || [[ ! -d "$1" ]] 
+if [[ -z "$1" ]] || [[ ! -d "$1" ]]
 then
-	>&2 echo "Usage: $0 /output/dir"
-	>&2 echo "   eg, $0 /srv/ga4gh"
-	>&2 echo "   invocation was: $0 $1 $2 $3"
-	exit 1
+  >&2 echo "Usage: $0 /output/dir"
+  >&2 echo "   eg, $0 /srv/ga4gh"
+  >&2 echo "   invocation was: $0 $1 $2 $3"
+  exit 1
 fi
 
 readonly OUTPUT_DIR="$1"
@@ -24,7 +24,7 @@ function wget_if_absent {
     local URL=$1
     local file=$2
     local pattern=$3
-    
+
     if [[ ! -f "${file}" ]]
     then
         if [[ -z "${pattern}" ]]
@@ -38,7 +38,7 @@ function wget_if_absent {
     fi
 }
 
-# use gsort/gzcat on OS X 
+# use gsort/gzcat on OS X
 function gnusort {
     if hash gsort 2>/dev/null
     then
@@ -58,7 +58,7 @@ function gnuzipcat {
 }
 
 ##
-## Make sure we have the AWS cli installed 
+## Make sure we have the AWS cli installed
 ##
 have_aws_cli
 
@@ -85,11 +85,11 @@ fi
 
 # pick NSAMPLES samples randomly from those reported in Chr22 VCF and sort them
 readonly ALLRAWSAMPLES=$( gnuzipcat "${ALLVCF}" \
-			| head -n 1000 \
-			| grep CHROM \
-			| cut -f10- -d $'\t' \
-			| tr $'\t' $'\n' \
-			| gnusort -R \
+      | head -n 1000 \
+      | grep CHROM \
+      | cut -f10- -d $'\t' \
+      | tr $'\t' $'\n' \
+      | gnusort -R \
             | head -n "${ALLNSAMPLES}" )
 
 ALLSAMPLES=""
@@ -120,7 +120,7 @@ bcftools view --force-samples -s "${ALLSAMPLES}" "${tmpfile}" \
      | bcftools view -i 'GT="1" || GT="1|1" || GT="0|1" || GT="1|0"' -o "${finalfile}"
 
 ##
-## Now create each site's data set 
+## Now create each site's data set
 ##
 
 for site in $( seq 1 $NSITES )
@@ -132,7 +132,7 @@ do
     cp so-xp.obo "${sitedir}/so-xp.obo"
     cp "gencode_v24lift37.db" "${sitedir}/gencode_v24lift37.db"
 
-    ## 
+    ##
     ## final subset (and tabix) of the VCFs
     ##
     mkdir -p "${sitedir}/vcfs"
